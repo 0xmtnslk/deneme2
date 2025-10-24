@@ -761,7 +761,7 @@ func (um *UpbitMonitor) Start() {
         log.Printf("⚡ PERFORMANCE:")
         log.Printf("   • Detection Target: <500ms (JSON parsing ~0.1-0.15ms overhead)")
         log.Printf("   • Rate: ~3 req/sec (SAFE under Upbit's limit)")
-        log.Printf("   • Latency Tests: Every hour at XX:05/10/15/20/25/30 → test_sync.json")
+        log.Printf("   • Latency Tests: Every 5 minutes (XX:00/05/10/15/20/25/30/35/40/45/50/55) → test_sync.json")
         log.Printf("🎯 STRATEGY:")
         log.Printf("   • Primary: total_count monitoring (reliable, public field)")
         log.Printf("   • Secondary: top_notice_id tracking (instant change detection)")
@@ -1080,8 +1080,8 @@ func (um *UpbitMonitor) logETagChange(proxyIndex int, oldETag, newETag string, r
         return nil
 }
 
-// shouldRunLatencyTest checks if current time is at XX:05, XX:10, XX:15, XX:20, XX:25, or XX:30
-// Returns true for latency testing every 5 minutes
+// shouldRunLatencyTest checks if current time is at every 5 minutes (XX:00, XX:05, XX:10, ..., XX:55)
+// Returns true for latency testing 12 times per hour
 func (um *UpbitMonitor) shouldRunLatencyTest() bool {
         um.latencyTestMu.Lock()
         defer um.latencyTestMu.Unlock()
@@ -1089,8 +1089,8 @@ func (um *UpbitMonitor) shouldRunLatencyTest() bool {
         now := time.Now().In(um.kstLocation)
         minute := now.Minute()
         
-        // Check if at XX:05, XX:10, XX:15, XX:20, XX:25, XX:30
-        isTestMinute := minute == 5 || minute == 10 || minute == 15 || minute == 20 || minute == 25 || minute == 30
+        // Check if at every 5 minutes (00, 05, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55)
+        isTestMinute := minute%5 == 0
         
         if !isTestMinute {
                 return false
