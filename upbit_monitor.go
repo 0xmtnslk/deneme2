@@ -212,7 +212,7 @@ func NewUpbitMonitor(onNewListing func(string)) *UpbitMonitor {
                 userAgentIndex:   0,
                 lastTotalCount:   make(map[int]int), // NEW: total_count tracking
                 lastTopNoticeID:  make(map[int]int), // NEW: top notice ID tracking
-                lastLatencyTest:  time.Now(),
+                lastLatencyTest:  time.Time{}, // Zero time - allows immediate first test
         }
 }
 
