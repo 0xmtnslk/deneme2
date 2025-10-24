@@ -1,3 +1,26 @@
 modules = ["go-1.24"]
 [agent]
 expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Trading Bot"
+
+[[workflows.workflow]]
+name = "Trading Bot"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./upbit-bitget-bot"
+
+[workflows.workflow.metadata]
+outputType = "console"
