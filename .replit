@@ -18,9 +18,9 @@ args = "Trading Bot"
 name = "Trading Bot"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "./upbit-bitget-bot"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "go build -o upbit-bitget-bot . && ./upbit-bitget-bot"
