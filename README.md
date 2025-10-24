@@ -4,8 +4,8 @@ Upbit borsasında yeni listelenen coinleri otomatik algılayan ve Bitget borsas�
 
 ## 🚀 Özellikler
 
-- ⚡ **Ultra Hızlı**: 16ms detection coverage ile yeni listing yakalama (0.016s - test edildi: 19 proxy)
-- 🔄 **Çoklu Proxy Rotasyon**: Intelligent proxy rotation ile 24/7 monitoring (3s cooldown, random interval, %0 429 riski)
+- ⚡ **Ultra Hızlı**: <0.5 saniye tespit süresi ile yeni listing yakalama
+- 🔄 **Çoklu Proxy Rotasyon**: Intelligent proxy rotation ile 24/7 monitoring (500ms cooldown, %0 429 riski)
 - 🤖 **Telegram Bot Arayüzü**: Çoklu kullanıcı yönetimi ve inline keyboard UI
 - 🔐 **Güvenli Credential Yönetimi**: Şifreli API key saklama
 - 📊 **Otomatik P&L Takibi**: 5, 30, 60 dakika ve 6 saatte bir bildirim
@@ -112,33 +112,21 @@ nano .env
 # Telegram Bot Token (BotFather'dan alınır)
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 
-# 24 SOCKS5 Proxy Sunucuları (format: username:password@ip:port)
-# CRITICAL: Proxy #1-2 MUST be Seoul-based for lowest latency!
-# With 24 proxies + 8s interval = 333ms coverage (0.333s) - TOTAL: 3 req/sec (SAFE)
+# SOCKS5 Proxy Sunucuları (format: username:password@ip:port)
+# Minimum 3, önerilen 10-15 proxy
+# NOT: Seoul bazlı proxy'leri önceliklendirin (en düşük latency için)
 UPBIT_PROXY_1=proxy1_user:proxy1_pass@ip1:1080
 UPBIT_PROXY_2=proxy2_user:proxy2_pass@ip2:1080
 UPBIT_PROXY_3=proxy3_user:proxy3_pass@ip3:1080
 UPBIT_PROXY_4=proxy4_user:proxy4_pass@ip4:1080
 UPBIT_PROXY_5=proxy5_user:proxy5_pass@ip5:1080
-UPBIT_PROXY_6=proxy6_user:proxy6_pass@ip6:1080
-UPBIT_PROXY_7=proxy7_user:proxy7_pass@ip7:1080
-UPBIT_PROXY_8=proxy8_user:proxy8_pass@ip8:1080
-UPBIT_PROXY_9=proxy9_user:proxy9_pass@ip9:1080
-UPBIT_PROXY_10=proxy10_user:proxy10_pass@ip10:1080
-UPBIT_PROXY_11=proxy11_user:proxy11_pass@ip11:1080
-UPBIT_PROXY_12=proxy12_user:proxy12_pass@ip12:1080
-UPBIT_PROXY_13=proxy13_user:proxy13_pass@ip13:1080
-UPBIT_PROXY_14=proxy14_user:proxy14_pass@ip14:1080
-UPBIT_PROXY_15=proxy15_user:proxy15_pass@ip15:1080
-UPBIT_PROXY_16=proxy16_user:proxy16_pass@ip16:1080
-UPBIT_PROXY_17=proxy17_user:proxy17_pass@ip17:1080
-UPBIT_PROXY_18=proxy18_user:proxy18_pass@ip18:1080
-UPBIT_PROXY_19=proxy19_user:proxy19_pass@ip19:1080
-UPBIT_PROXY_20=proxy20_user:proxy20_pass@ip20:1080
-UPBIT_PROXY_21=proxy21_user:proxy21_pass@ip21:1080
+# ... UPBIT_PROXY_15'e kadar ekleyebilirsiniz
 
 # Şifreleme anahtarı (32 karakter)
 BOT_ENCRYPTION_KEY=your_32_character_encryption_key_here_12345
+
+# Session secret (opsiyonel, otomatik oluşturulur)
+SESSION_SECRET=your_session_secret_here
 ```
 
 **Not:** `.env` dosyasını kaydetmek için `Ctrl+O` sonra `Enter`, çıkmak için `Ctrl+X`
@@ -164,65 +152,40 @@ username:password@ip_address:port
 
 ---
 
-## 🧪 4.5 Test Araçları (ÖNEMLİ)
+## 🧪 5. İlk Test (Opsiyonel)
 
-**Test klasöründe kapsamlı test araçları bulunmaktadır:**
+Bot çalıştırmadan önce sistemin çalışıp çalışmadığını test edebilirsiniz:
 
-### Kapsamlı Sistem Testi
 ```bash
-cd /workspace
-./test/test_simulation.sh
+cd /root/upbit-trade
+
+# Zaman senkronizasyonu kontrolü
+go run check_time_sync.go
+
+# Proxy bağlantı testi (manuel)
+curl --socks5 username:password@proxy_ip:port https://api.upbit.com/v1/status/wallet
 ```
-**Test eder:** Proxy bağlantısı, zaman sync, bot detection, ETag sistemi, rate limit
 
-### Canlı Simülasyon (30 saniye)
-```bash
-cd /workspace
-./test/live_simulation.sh
-```
-**Test eder:** Gerçek proxy'lerle 30 saniyelik canlı monitoring
-
-### Rate Limit Testi
-```bash
-cd /workspace/test
-go run test_rate_limit.go
-```
-**Test süresi:** ~7-10 dakika  
-**Amaç:** Farklı interval'larda (0.5s, 1s, 2s, 3s, 3.3s, 4s, 5s) test yaparak güvenli limiti bulur
-
-### Kuru Çalıştırma (Dry Run)
-```bash
-cd /workspace/test
-go run dry_run.go
-```
-**Test eder:** Tüm sistemlerin bağımsız olarak çalışmasını kontrol eder
-
-### Test Raporları
-- `test/TEST_REPORT.md` - Detaylı test sonuçları
-- `test/SIMULATION_SUMMARY.md` - Hızlı özet rapor
-
-**Son test sonuçları (2025-10-23):**
-- ✅ 19/19 proxy çalışıyor
-- ✅ 16ms detection coverage
-- ✅ Bot detection bypass başarılı
-- ✅ Rate limit güvenli (3 req/sec)
+**Beklenen çıktı:**
+- ✅ Clock offset < 1 saniye
+- ✅ Proxy bağlantısı başarılı
 
 ---
 
-## 🔨 5. Build (Derleme)
+## 🔨 6. Build (Derleme)
 
-### 5.1 Binary Oluşturma
+### 6.1 Binary Oluşturma
 ```bash
 cd /root/upbit-trade
 go build -o upbit-bitget-bot .
 ```
 
-### 5.2 Executable Permission Verme
+### 6.2 Executable Permission Verme
 ```bash
 chmod +x upbit-bitget-bot
 ```
 
-### 5.3 Manuel Test (Opsiyonel)
+### 6.3 Manuel Test (Opsiyonel)
 ```bash
 # Önce screen oturumu açın (Ctrl+A+D ile detach edilebilir)
 screen -S trading-bot
@@ -236,14 +199,14 @@ screen -S trading-bot
 
 ---
 
-## 🔄 6. Systemd Service Kurulumu (Arka Plan Çalışma)
+## 🔄 7. Systemd Service Kurulumu (Arka Plan Çalışma)
 
-### 6.1 Service Dosyası Oluşturma
+### 7.1 Service Dosyası Oluşturma
 ```bash
 nano /etc/systemd/system/upbit-bitget-bot.service
 ```
 
-### 6.2 Service İçeriği
+### 7.2 Service İçeriği
 
 Aşağıdaki içeriği yapıştırın:
 
@@ -274,7 +237,7 @@ WantedBy=multi-user.target
 
 **Kaydet ve çık:** `Ctrl+O` → `Enter` → `Ctrl+X`
 
-### 6.3 Service'i Aktifleştirme
+### 7.3 Service'i Aktifleştirme
 ```bash
 # Systemd'yi yeniden yükle
 systemctl daemon-reload
@@ -286,7 +249,7 @@ systemctl enable upbit-bitget-bot.service
 systemctl start upbit-bitget-bot.service
 ```
 
-### 6.4 Durum Kontrolü
+### 7.4 Durum Kontrolü
 ```bash
 # Service durumu
 systemctl status upbit-bitget-bot.service
@@ -301,7 +264,7 @@ tail -f /var/log/upbit-bitget-bot-error.log
 journalctl -u upbit-bitget-bot.service -n 100
 ```
 
-### 6.5 Service Komutları
+### 7.5 Service Komutları
 
 ```bash
 # Başlat
@@ -322,15 +285,15 @@ systemctl status upbit-bitget-bot.service
 
 ---
 
-## 📊 7. Bot Kullanımı (Telegram)
+## 📊 8. Bot Kullanımı (Telegram)
 
-### 7.1 Telegram Bot'u Başlatma
+### 8.1 Telegram Bot'u Başlatma
 
 1. Telegram'da botunuzu bulun (BotFather'da verdiğiniz username)
 2. `/start` komutunu gönderin
 3. Ana menü görünecek
 
-### 7.2 Kullanıcı Kaydı ve Ayarlar
+### 8.2 Kullanıcı Kaydı ve Ayarlar
 
 **İlk Kurulum:**
 ```
@@ -347,7 +310,7 @@ systemctl status upbit-bitget-bot.service
 (API bilgileri korunur)
 ```
 
-### 7.3 Komutlar
+### 8.3 Komutlar
 
 - `/start` - Botu başlat ve menüyü göster
 - `/status` - Aktif pozisyonlar ve durum
@@ -357,9 +320,9 @@ systemctl status upbit-bitget-bot.service
 
 ---
 
-## 🔄 8. Güncelleme ve Bakım
+## 🔄 9. Güncelleme ve Bakım
 
-### 8.1 Kod Güncellemesi (GitHub'dan)
+### 9.1 Kod Güncellemesi (GitHub'dan)
 
 **Adım adım güncelleme:**
 
@@ -434,7 +397,7 @@ make synctime
 make checksync
 ```
 
-### 8.2 Otomatik Güncelleme Script'i (Opsiyonel)
+### 9.2 Otomatik Güncelleme Script'i (Opsiyonel)
 
 ```bash
 # Güncelleme script'i oluştur
@@ -498,7 +461,7 @@ chmod +x /root/update-bot.sh
 /root/update-bot.sh
 ```
 
-### 8.3 Yeni Komutlar (Make Kullanımı)
+### 9.3 Yeni Komutlar (Make Kullanımı)
 
 Bot artık **Makefile** ile daha kolay yönetilebiliyor:
 
@@ -582,7 +545,7 @@ make synctime
 - Trade timing hassasiyeti için kritik önem taşır
 - Günde 1-2 kere kontrol etmek önerilir
 
-### 8.4 Log Rotasyonu (Disk Tasarrufu)
+### 9.4 Log Rotasyonu (Disk Tasarrufu)
 
 ```bash
 # Logrotate yapılandırması
@@ -609,9 +572,9 @@ nano /etc/logrotate.d/upbit-bitget-bot
 
 ---
 
-## 🛡️ 9. Güvenlik Önerileri
+## 🛡️ 10. Güvenlik Önerileri
 
-### 9.1 Firewall Ayarları (UFW)
+### 10.1 Firewall Ayarları (UFW)
 
 ```bash
 # UFW kur
@@ -631,7 +594,7 @@ ufw enable
 ufw status
 ```
 
-### 9.2 Fail2Ban (SSH Koruması)
+### 10.2 Fail2Ban (SSH Koruması)
 
 ```bash
 # Fail2ban kur
@@ -642,14 +605,14 @@ systemctl start fail2ban
 systemctl enable fail2ban
 ```
 
-### 9.3 .env Dosyası İzinleri
+### 10.3 .env Dosyası İzinleri
 
 ```bash
 # Sadece root okuyabilsin
 chmod 600 /root/upbit-trade/.env
 ```
 
-### 9.4 API Key Güvenliği
+### 10.4 API Key Güvenliği
 
 **Bitget API:**
 - ✅ Sadece futures/spot trading iznini aktif edin
@@ -659,9 +622,9 @@ chmod 600 /root/upbit-trade/.env
 
 ---
 
-## 🔍 10. Sorun Giderme
+## 🔍 11. Sorun Giderme
 
-### 10.1 Bot Çalışmıyor
+### 11.1 Bot Çalışmıyor
 
 **Kontrol adımları:**
 ```bash
@@ -679,7 +642,7 @@ cat /root/upbit-trade/.env
 ls -la /root/upbit-trade/upbit-bitget-bot
 ```
 
-### 10.2 Proxy Bağlantı Hataları
+### 11.2 Proxy Bağlantı Hataları
 
 **Test:**
 ```bash
@@ -690,7 +653,7 @@ curl --socks5 username:password@ip:port https://api.upbit.com/v1/status/wallet
 nano /root/test-proxies.sh
 ```
 
-### 10.3 Telegram Bağlantı Hatası
+### 11.3 Telegram Bağlantı Hatası
 
 **Kontrol:**
 ```bash
@@ -701,7 +664,7 @@ grep TELEGRAM_BOT_TOKEN /root/upbit-trade/.env
 ping -c 4 api.telegram.org
 ```
 
-### 10.4 Go Build Hataları
+### 11.4 Go Build Hataları
 
 ```bash
 # Go modules temizle
@@ -714,7 +677,7 @@ go mod tidy
 go build -o upbit-bitget-bot .
 ```
 
-### 10.5 Disk Dolu
+### 11.5 Disk Dolu
 
 ```bash
 # Log dosyalarını temizle
@@ -727,9 +690,9 @@ journalctl --vacuum-time=2d
 
 ---
 
-## 📈 11. İzleme ve Monitoring
+## 📈 12. İzleme ve Monitoring
 
-### 11.1 Gerçek Zamanlı Log İzleme
+### 12.1 Gerçek Zamanlı Log İzleme
 
 ```bash
 # Tüm loglar (renkli)
@@ -742,7 +705,7 @@ tail -f /var/log/upbit-bitget-bot.log | grep "FAST TRACK\|pozisyon açıldı"
 tail -f /var/log/upbit-bitget-bot-error.log
 ```
 
-### 11.2 Performans İzleme
+### 12.2 Performans İzleme
 
 ```bash
 # Bot kaynak kullanımı
@@ -755,7 +718,7 @@ htop
 netstat -tunlp | grep upbit-bitget-bot
 ```
 
-### 11.3 Otomatik Restart (Crash Durumunda)
+### 12.3 Otomatik Restart (Crash Durumunda)
 
 Service dosyasında zaten var:
 ```ini
@@ -767,9 +730,9 @@ Bot crash olursa 10 saniye sonra otomatik restart olur.
 
 ---
 
-## 📝 12. Veri Dosyaları
+## 📝 13. Veri Dosyaları
 
-### 12.1 Önemli Dosyalar
+### 13.1 Önemli Dosyalar
 
 ```bash
 # Kullanıcı veritabanı
@@ -782,7 +745,7 @@ Bot crash olursa 10 saniye sonra otomatik restart olur.
 /root/upbit-trade/active_positions.json
 ```
 
-### 12.2 Yedekleme (Backup)
+### 13.2 Yedekleme (Backup)
 
 ```bash
 # Yedekleme script'i
@@ -827,9 +790,9 @@ crontab -e
 
 ---
 
-## 🚨 13. Acil Durum Prosedürleri
+## 🚨 14. Acil Durum Prosedürleri
 
-### 13.1 Tüm Trade'leri Durdurma
+### 14.1 Tüm Trade'leri Durdurma
 
 ```bash
 # Botu durdur
@@ -839,7 +802,7 @@ systemctl stop upbit-bitget-bot.service
 # Bot üzerinden: ⚙️ Ayarlar → ❌ Botu Deaktif Et
 ```
 
-### 13.2 Factory Reset
+### 14.2 Factory Reset
 
 ```bash
 # Service durdur
@@ -859,7 +822,7 @@ systemctl start upbit-bitget-bot.service
 
 ---
 
-## 📞 14. Destek ve İletişim
+## 📞 15. Destek ve İletişim
 
 - **GitHub Issues:** https://github.com/0xmtnslk/upbit-trade/issues
 - **Telegram:** Bot üzerinden destek talebi
@@ -934,7 +897,7 @@ tail -f /var/log/upbit-bitget-bot.log
 
 ---
 
-*Son güncelleme: 2025-10-15*
+*Son güncelleme: 2025-10-24*
 
 ---
 
@@ -956,9 +919,9 @@ tail -f /var/log/upbit-bitget-bot.log
 
 ### 🚀 Performance & Optimizasyon
 
-- **16ms Detection Coverage**: 19 proxy ile ultra hızlı tespit (test edildi: 2025-10-23)
+- **<0.5 Saniye Tespit**: 3-15 proxy ile ultra hızlı coin tespiti
 - **JSONL Format**: Append-only logging, %90+ disk I/O azalması
-- **Intelligent Proxy Rotation**: 3s proactive cooldown + random intervals
+- **Intelligent Proxy Rotation**: 500ms proactive cooldown + random intervals
 - **Bot Detection Bypass**: 11 User-Agent rotation, gerçek browser headers
 - **~3 req/sec**: Güvenli rate limit (%70 altında kullanım)
 - **KST Timezone**: Upbit server zamanı ile tam uyumlu
@@ -966,22 +929,17 @@ tail -f /var/log/upbit-bitget-bot.log
 ### 📁 Proje Yapısı
 
 ```
-/workspace/
-├── main.go              # Ana uygulama
-├── upbit_monitor.go     # Upbit monitoring sistemi
-├── telegram_bot.go      # Telegram bot arayüzü
-├── bitget.go            # Bitget API entegrasyonu
-├── test/                # Test dosyaları
-│   ├── TEST_REPORT.md          # Detaylı test raporu
-│   ├── SIMULATION_SUMMARY.md   # Hızlı özet
-│   ├── test_simulation.sh      # Sistem testi
-│   ├── live_simulation.sh      # Canlı simülasyon
-│   ├── test_rate_limit.go      # Rate limit testi
-│   └── dry_run.go              # Kuru çalıştırma
-├── tools/               # Yardımcı araçlar
-│   ├── check_upbit_time.sh
-│   └── checksync.go
-└── OPTIMIZATION_SUMMARY.md  # Optimizasyon detayları
+/root/upbit-trade/
+├── main.go                      # Ana uygulama
+├── upbit_monitor.go             # Upbit monitoring sistemi
+├── telegram_bot.go              # Telegram bot arayüzü
+├── bitget.go                    # Bitget API entegrasyonu
+├── upbit_new.json               # Tespit edilen coinler (JSONL)
+├── trade_execution_log.json     # Trade timing logları
+├── bot_users.json               # Kullanıcı veritabanı
+├── active_positions.json        # Aktif pozisyonlar
+├── Makefile                     # Make komutları
+└── check_time_sync.go           # Zaman senkronizasyon kontrolü
 ```
 
-*Son güncelleme: 2025-10-23*
+*Son güncelleme: 2025-10-24*
