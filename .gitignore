@@ -1,5 +1,6 @@
 # Binaries
 bot
+upbit-bitget-bot
 *.exe
 *.dll
 *.so
@@ -21,6 +22,10 @@ go.work
 bot_users.json
 active_positions.json
 upbit_new.json
+
+# Runtime data files
+etag_news.json
+test_sync.json
 
 # Session files
 sessions/
