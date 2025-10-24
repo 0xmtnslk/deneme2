@@ -104,8 +104,8 @@ type ETagChangeLog struct {
 func NewUpbitMonitor(onNewListing func(string)) *UpbitMonitor {
         var proxies []string
         
-        // Load up to 24 proxies (Proxy #1-2 should be Seoul for lowest latency)
-        for i := 1; i <= 24; i++ {
+        // Load up to 100 proxies (Proxy #1-2 should be Seoul for lowest latency)
+        for i := 1; i <= 100; i++ {
                 proxyEnv := os.Getenv(fmt.Sprintf("UPBIT_PROXY_%d", i))
                 if proxyEnv != "" {
                         proxies = append(proxies, proxyEnv)
@@ -774,17 +774,41 @@ func (um *UpbitMonitor) Start() {
 }
 
 // shouldPauseNow checks if current time is within pause window
+// Includes weekend detection: Friday 19:05 - Monday 08:55
 func (um *UpbitMonitor) shouldPauseNow() bool {
         now := time.Now().In(um.timezone)
         currentMinutes := now.Hour()*60 + now.Minute()
+        weekday := now.Weekday()
 
-        // Handle overnight window (e.g., 13:00-03:00 = 780-180)
+        // WEEKEND CHECK: Friday evening through Monday morning
+        // Friday after pauseStart (19:05) → Pause
+        if weekday == time.Friday && currentMinutes >= um.pauseStart {
+                return true
+        }
+        
+        // Saturday all day → Pause
+        if weekday == time.Saturday {
+                return true
+        }
+        
+        // Sunday all day → Pause
+        if weekday == time.Sunday {
+                return true
+        }
+        
+        // Monday before pauseEnd (08:55) → Pause
+        if weekday == time.Monday && currentMinutes < um.pauseEnd {
+                return true
+        }
+
+        // WEEKDAY NIGHT CHECK (Tuesday-Friday nights)
+        // Handle overnight window (e.g., 19:05-08:55 = 1145-535)
         if um.pauseStart > um.pauseEnd {
                 // Overnight: pause if >= start OR < end
                 return currentMinutes >= um.pauseStart || currentMinutes < um.pauseEnd
         }
         
-        // Same-day window (e.g., 01:00-05:00 = 60-300)
+        // Same-day window (rare, e.g., 01:00-05:00 = 60-300)
         return currentMinutes >= um.pauseStart && currentMinutes < um.pauseEnd
 }
 
