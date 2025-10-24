@@ -69,14 +69,22 @@ type ETagChangeLog struct {
 }
 
 // LatencyTestLog for scheduled latency testing (test_sync.json)
+// Now includes full API response data for verification
 type LatencyTestLog struct {
-        ProxyIndex     int    `json:"proxy_index"`
-        ProxyName      string `json:"proxy_name"`
-        TestedAt       string `json:"tested_at"`       // Local KST time
-        ServerTime     string `json:"server_time"`     // Server response time
-        ResponseTimeMs int64  `json:"response_time_ms"`
-        StatusCode     int    `json:"status_code"`
-        Success        bool   `json:"success"`
+        ProxyIndex        int      `json:"proxy_index"`
+        ProxyName         string   `json:"proxy_name"`
+        TestedAt          string   `json:"tested_at"`        // Local KST time
+        ServerTime        string   `json:"server_time"`      // Server response time
+        ResponseTimeMs    int64    `json:"response_time_ms"`
+        StatusCode        int      `json:"status_code"`
+        Success           bool     `json:"success"`
+        // API Response Data (for verification)
+        TotalCount        int      `json:"total_count"`        // Total announcements count
+        TopNoticeID       int      `json:"top_notice_id"`      // Latest notice ID
+        TopNoticeTitle    string   `json:"top_notice_title"`   // Latest notice title
+        NoticeCount       int      `json:"notice_count"`       // Number of notices in response
+        ETag              string   `json:"etag"`               // ETag header
+        APISuccess        bool     `json:"api_success"`        // API success field
 }
 
 
@@ -641,11 +649,6 @@ func (um *UpbitMonitor) checkProxy(proxyURL string, proxyIndex int) {
         }
         defer resp.Body.Close()
 
-        // LATENCY TESTING: Log response time if it's test time
-        if shouldTest && resp.StatusCode == http.StatusOK {
-                go um.logLatencyTest(proxyIndex, responseTime, resp.StatusCode)
-        }
-
         switch resp.StatusCode {
         case http.StatusOK:
                 newETag := resp.Header.Get("ETag")
@@ -669,10 +672,17 @@ func (um *UpbitMonitor) checkProxy(proxyURL string, proxyIndex int) {
                         totalCount = apiResp.Data.TotalCount
                 }
                 
-                // Get top notice ID (latest announcement)
+                // Get top notice ID and title (latest announcement)
                 var topNoticeID int
+                var topNoticeTitle string
                 if len(apiResp.Data.Notices) > 0 {
                         topNoticeID = apiResp.Data.Notices[0].ID
+                        topNoticeTitle = apiResp.Data.Notices[0].Title
+                }
+                
+                // LATENCY TESTING: Log full API response if it's test time
+                if shouldTest {
+                        go um.logLatencyTest(proxyIndex, responseTime, resp.StatusCode, newETag, &apiResp, totalCount, topNoticeID, topNoticeTitle)
                 }
                 
                 // Check for changes: total_count OR top_notice_id
@@ -1095,8 +1105,8 @@ func (um *UpbitMonitor) shouldRunLatencyTest() bool {
         return true
 }
 
-// logLatencyTest logs latency test results to test_sync.json (JSONL format)
-func (um *UpbitMonitor) logLatencyTest(proxyIndex int, responseTimeMs int64, statusCode int) error {
+// logLatencyTest logs latency test results with FULL API response to test_sync.json (JSONL format)
+func (um *UpbitMonitor) logLatencyTest(proxyIndex int, responseTimeMs int64, statusCode int, etag string, apiResp *UpbitAPIResponse, totalCount, topNoticeID int, topNoticeTitle string) error {
         um.logMu.Lock()
         defer um.logMu.Unlock()
 
@@ -1114,6 +1124,13 @@ func (um *UpbitMonitor) logLatencyTest(proxyIndex int, responseTimeMs int64, sta
                 ResponseTimeMs: responseTimeMs,
                 StatusCode:     statusCode,
                 Success:        statusCode == http.StatusOK,
+                // Full API Response Data
+                TotalCount:     totalCount,
+                TopNoticeID:    topNoticeID,
+                TopNoticeTitle: topNoticeTitle,
+                NoticeCount:    len(apiResp.Data.Notices),
+                ETag:           etag,
+                APISuccess:     apiResp.Success,
         }
 
         // Append to JSONL file
@@ -1132,7 +1149,7 @@ func (um *UpbitMonitor) logLatencyTest(proxyIndex int, responseTimeMs int64, sta
                 return fmt.Errorf("error writing latency test: %v", err)
         }
 
-        log.Printf("📊 Latency test: Proxy #%d, %dms", proxyIndex+1, responseTimeMs)
+        log.Printf("📊 Latency test: Proxy #%d, %dms, total_count=%d, notices=%d", proxyIndex+1, responseTimeMs, totalCount, len(apiResp.Data.Notices))
         return nil
 }
 
