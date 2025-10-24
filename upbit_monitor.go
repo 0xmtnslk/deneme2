@@ -314,12 +314,9 @@ func (um *UpbitMonitor) loadExistingData() error {
 }
 
 func (um *UpbitMonitor) saveToJSON(symbol string) error {
-        // DUPLICATE CHECK: If symbol already exists in cache, skip saving
-        if um.cachedTickers[symbol] {
-                log.Printf("⚠️ DUPLICATE PREVENTED: %s already exists in cache, skipping save", symbol)
-                return nil // Not an error, just skip
-        }
-
+        // NOTE: Duplicate check is already done in processAnnouncements (Line 527-530)
+        // No need to check again here - this function is only called for NEW tickers
+        
         // Record detection timestamp for trade log
         detectedAt := time.Now()
         
@@ -533,10 +530,17 @@ func (um *UpbitMonitor) processAnnouncements(body io.Reader) {
         if len(newlyAdded) > 0 {
                 fmt.Printf("\n🔥🔥🔥 YENİ LİSTELEME TESPİT EDİLDİ: %v 🔥🔥🔥\n", newlyAdded)
                 for _, ticker := range newlyAdded {
-                        um.cachedTickers[ticker] = true
+                        // IMPORTANT: Save to file BEFORE adding to cache
+                        // This ensures file write happens even on first detection
                         if err := um.saveToJSON(ticker); err != nil {
                                 log.Printf("Error saving ticker %s: %v", ticker, err)
+                                continue // Skip cache update if file write failed
                         }
+                        
+                        // Add to cache AFTER successful file write
+                        um.cachedTickers[ticker] = true
+                        
+                        // Trigger callback for trading execution
                         if um.onNewListing != nil {
                                 go um.onNewListing(ticker)
                         }

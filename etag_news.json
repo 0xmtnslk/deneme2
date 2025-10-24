@@ -10,3 +10,4 @@
 {"proxy_index":2,"proxy_name":"Proxy #2 (Seoul)","detected_at":"2025-10-24 16:22:32.673 KST","server_time":"2025-10-24T07:22:32.673130208Z","old_etag":"W/\"0debbd4b0fb3405430e41c33c901c3b20\"","new_etag":"W/\"0187d02f36b1d473163bdffe4fab6b652\"","response_time_ms":1552}
 {"proxy_index":3,"proxy_name":"Proxy #3","detected_at":"2025-10-24 16:30:56.176 KST","server_time":"2025-10-24T07:30:56.176296902Z","old_etag":"","new_etag":"W/\"0187d02f36b1d473163bdffe4fab6b652\"","response_time_ms":1431}
 {"proxy_index":2,"proxy_name":"Proxy #2 (Seoul)","detected_at":"2025-10-24 16:31:54.997 KST","server_time":"2025-10-24T07:31:54.997642601Z","old_etag":"","new_etag":"W/\"0187d02f36b1d473163bdffe4fab6b652\"","response_time_ms":1386}
+{"proxy_index":3,"proxy_name":"Proxy #3","detected_at":"2025-10-24 16:36:38.086 KST","server_time":"2025-10-24T07:36:38.086681758Z","old_etag":"","new_etag":"W/\"0187d02f36b1d473163bdffe4fab6b652\"","response_time_ms":1519}
