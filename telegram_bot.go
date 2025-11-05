@@ -1868,6 +1868,123 @@ func (tb *TelegramBot) startStatusNotifications() {
         }
 }
 
+// startTakeProfitMonitor monitors all positions and auto-closes when TP range is hit
+func (tb *TelegramBot) startTakeProfitMonitor() {
+        log.Printf("📊 Starting Take Profit Monitor (check interval: 0.5s)...")
+        
+        ticker := time.NewTicker(500 * time.Millisecond)
+        defer ticker.Stop()
+        
+        for range ticker.C {
+                positionsMutex.RLock()
+                positionsCount := len(activePositions)
+                
+                if positionsCount == 0 {
+                        positionsMutex.RUnlock()
+                        continue
+                }
+                
+                // Create snapshot of positions to check
+                positionsToCheck := make([]*PositionInfo, 0, positionsCount)
+                for _, pos := range activePositions {
+                        positionsToCheck = append(positionsToCheck, pos)
+                }
+                positionsMutex.RUnlock()
+                
+                // Check each position
+                for _, position := range positionsToCheck {
+                        // Get user's TP settings
+                        user, exists := tb.getUser(position.UserID)
+                        if !exists || user.TakeProfitPercent <= 0 {
+                                continue // Skip if user doesn't exist or TP is disabled
+                        }
+                        
+                        // Create API instance for this user
+                        api := NewBitgetAPI(user.BitgetAPIKey, user.BitgetSecret, user.BitgetPasskey)
+                        
+                        // Get current price
+                        currentPrice, err := api.GetSymbolPrice(position.Symbol)
+                        if err != nil {
+                                log.Printf("⚠️ TP Monitor: Failed to get price for %s: %v", position.Symbol, err)
+                                continue
+                        }
+                        
+                        // Calculate profit percentage
+                        profitPercent := ((currentPrice - position.OpenPrice) / position.OpenPrice) * 100
+                        
+                        // Calculate TP range
+                        tpMin := user.TakeProfitPercent
+                        tpMax := user.TakeProfitPercent + 5
+                        
+                        // Check if profit is within TP range
+                        if profitPercent >= tpMin && profitPercent <= tpMax {
+                                log.Printf("🎯 TP HIT! %s: %.2f%% profit (target: %.0f%%-%.0f%%)", 
+                                        position.Symbol, profitPercent, tpMin, tpMax)
+                                
+                                // Close position
+                                _, err := api.FlashClosePosition(position.Symbol, "long")
+                                if err != nil {
+                                        log.Printf("❌ TP Auto-close failed for %s: %v", position.Symbol, err)
+                                        
+                                        // Notify user about failure
+                                        failMsg := fmt.Sprintf(`⚠️ TP Otomatik Kapatma Hatası
+
+📊 %s pozisyonu TP aralığına ulaştı (%%%.2f) ancak kapatma başarısız oldu.
+
+Hata: %s
+
+Lütfen manuel olarak kapatın: /close`, position.Symbol, profitPercent, err.Error())
+                                        
+                                        msg := tgbotapi.NewMessage(position.UserID, failMsg)
+                                        tb.bot.Send(msg)
+                                        continue
+                                }
+                                
+                                // Calculate final P&L
+                                priceChange := currentPrice - position.OpenPrice
+                                usdPnL := priceChange * position.Size
+                                usdPnLWithLeverage := usdPnL * float64(position.Leverage)
+                                
+                                // Remove from active positions
+                                positionKey := fmt.Sprintf("%d_%s", position.UserID, position.Symbol)
+                                positionsMutex.Lock()
+                                delete(activePositions, positionKey)
+                                positionsMutex.Unlock()
+                                go saveActivePositions()
+                                
+                                // Notify user
+                                successMsg := fmt.Sprintf(`✅ Take Profit Otomatik Kapandı!
+
+💹 Sembol: %s
+📊 Açılış: $%.4f
+💰 Kapanış: $%.4f
+📈 Kar: %%%.2f (Hedef: %%%.0f-%%%.0f)
+
+🟢 P&L: +%.2f USDT
+⚖️ Kaldıraç: %dx
+💵 Pozisyon: %.8f
+
+🎯 Pozisyon otomatik olarak kar al hedefinde kapatıldı!`, 
+                                        position.Symbol,
+                                        position.OpenPrice,
+                                        currentPrice,
+                                        profitPercent,
+                                        tpMin,
+                                        tpMax,
+                                        usdPnLWithLeverage,
+                                        position.Leverage,
+                                        position.Size)
+                                
+                                msg := tgbotapi.NewMessage(position.UserID, successMsg)
+                                tb.bot.Send(msg)
+                                
+                                log.Printf("✅ TP Auto-closed %s at %.2f%% profit for user %d", 
+                                        position.Symbol, profitPercent, position.UserID)
+                        }
+                }
+        }
+}
+
 // InitializeTestUser creates test user with predefined credentials
 func InitializeTestUser(bot *TelegramBot) {
         // Check if TEST credentials exist
