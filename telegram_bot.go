@@ -25,29 +25,31 @@ import (
 type UserState string
 
 const (
-        StateNone             UserState = "none"
-        StateConfirmAPIChange UserState = "confirm_api_change"
-        StateAwaitingKey      UserState = "awaiting_api_key"
-        StateAwaitingSecret   UserState = "awaiting_secret"
-        StateAwaitingPasskey  UserState = "awaiting_passkey"  
-        StateAwaitingMargin   UserState = "awaiting_margin"
-        StateAwaitingLeverage UserState = "awaiting_leverage"
-        StateComplete         UserState = "complete"
+        StateNone               UserState = "none"
+        StateConfirmAPIChange   UserState = "confirm_api_change"
+        StateAwaitingKey        UserState = "awaiting_api_key"
+        StateAwaitingSecret     UserState = "awaiting_secret"
+        StateAwaitingPasskey    UserState = "awaiting_passkey"  
+        StateAwaitingMargin     UserState = "awaiting_margin"
+        StateAwaitingLeverage   UserState = "awaiting_leverage"
+        StateAwaitingTakeProfit UserState = "awaiting_take_profit"
+        StateComplete           UserState = "complete"
 )
 
 // UserData represents individual user settings and API credentials
 type UserData struct {
-        UserID        int64     `json:"user_id"`
-        Username      string    `json:"username"`
-        BitgetAPIKey  string    `json:"bitget_api_key"`      // Encrypted when stored
-        BitgetSecret  string    `json:"bitget_secret"`       // Encrypted when stored
-        BitgetPasskey string    `json:"bitget_passkey"`      // Encrypted when stored
-        MarginUSDT    float64   `json:"margin_usdt"`
-        Leverage      int       `json:"leverage"`
-        IsActive      bool      `json:"is_active"`
-        State         UserState `json:"current_state"`
-        CreatedAt     string    `json:"created_at"`
-        UpdatedAt     string    `json:"updated_at"`
+        UserID            int64     `json:"user_id"`
+        Username          string    `json:"username"`
+        BitgetAPIKey      string    `json:"bitget_api_key"`      // Encrypted when stored
+        BitgetSecret      string    `json:"bitget_secret"`       // Encrypted when stored
+        BitgetPasskey     string    `json:"bitget_passkey"`      // Encrypted when stored
+        MarginUSDT        float64   `json:"margin_usdt"`
+        Leverage          int       `json:"leverage"`
+        TakeProfitPercent float64   `json:"take_profit_percent"` // TP percentage (10 = %10-15 range)
+        IsActive          bool      `json:"is_active"`
+        State             UserState `json:"current_state"`
+        CreatedAt         string    `json:"created_at"`
+        UpdatedAt         string    `json:"updated_at"`
 }
 
 // PositionInfo stores position tracking data for reminders
