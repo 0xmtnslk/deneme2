@@ -205,6 +205,9 @@ func NewTelegramBot(token string) (*TelegramBot, error) {
 
         // Start 4-hour status notifications
         go botInstance.startStatusNotifications()
+        
+        // Start Take Profit monitor (0.5s interval)
+        go botInstance.startTakeProfitMonitor()
 
         return botInstance, nil
 }
