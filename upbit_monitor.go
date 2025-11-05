@@ -130,6 +130,10 @@ type LatencyTestLog struct {
         latencyTestFile   string
         lastLatencyTest   time.Time
         latencyTestMu     sync.Mutex
+        // NEW: Proxy warm-up tracking (cold start optimization)
+        proxyWarmedUp     map[int]bool // proxy index -> true if already warmed up
+        proxyWarmupMu     sync.RWMutex
+        proxyWarmupTime   map[int]time.Duration // proxy index -> warm-up duration
 }
 
 func NewUpbitMonitor(onNewListing func(string)) *UpbitMonitor {
@@ -221,6 +225,8 @@ func NewUpbitMonitor(onNewListing func(string)) *UpbitMonitor {
                 lastTotalCount:   make(map[int]int), // NEW: total_count tracking
                 lastTopNoticeID:  make(map[int]int), // NEW: top notice ID tracking
                 lastLatencyTest:  time.Time{}, // Zero time - allows immediate first test
+                proxyWarmedUp:    make(map[int]bool), // NEW: Proxy warm-up tracking
+                proxyWarmupTime:  make(map[int]time.Duration), // NEW: Warm-up duration tracking
         }
 }
 
@@ -297,6 +303,36 @@ func (um *UpbitMonitor) createProxyClient(proxyURL string) (*http.Client, error)
         }
 
         return client, nil
+}
+
+// performWarmupRequest performs a silent warm-up request to establish connection
+// This reduces cold-start latency for subsequent requests (connection reuse)
+func (um *UpbitMonitor) performWarmupRequest(proxyURL string, proxyIndex int) {
+        client, err := um.createProxyClient(proxyURL)
+        if err != nil {
+                // Silent failure - warm-up is optimization, not critical
+                return
+        }
+
+        req, err := http.NewRequest("GET", um.apiURL, nil)
+        if err != nil {
+                return
+        }
+
+        // Minimal headers for warm-up request
+        req.Header.Set("User-Agent", um.getRandomUserAgent())
+        req.Header.Set("Accept", "application/json")
+
+        // Execute warm-up request (ignore response)
+        resp, err := client.Do(req)
+        if err != nil {
+                // Silent failure - this is just connection establishment
+                return
+        }
+        defer resp.Body.Close()
+        
+        // Drain body to ensure connection is fully established
+        io.ReadAll(resp.Body)
 }
 
 // getRandomUserAgent returns a random User-Agent from the pool
@@ -591,6 +627,29 @@ func (um *UpbitMonitor) processAnnouncements(body io.Reader) {
 // checkProxy performs a single API check with one proxy
 // NOW USES: total_count + top_notice_id detection (hybrid with ETag fallback)
 func (um *UpbitMonitor) checkProxy(proxyURL string, proxyIndex int) {
+        // ============================================
+        // PROXY WARM-UP (Cold Start Optimization)
+        // ============================================
+        // Check if this proxy needs warm-up (first request)
+        um.proxyWarmupMu.RLock()
+        isWarmedUp := um.proxyWarmedUp[proxyIndex]
+        um.proxyWarmupMu.RUnlock()
+        
+        if !isWarmedUp {
+                // Perform silent warm-up request (connection establishment)
+                warmupStart := time.Now()
+                um.performWarmupRequest(proxyURL, proxyIndex)
+                warmupDuration := time.Since(warmupStart)
+                
+                // Mark proxy as warmed up
+                um.proxyWarmupMu.Lock()
+                um.proxyWarmedUp[proxyIndex] = true
+                um.proxyWarmupTime[proxyIndex] = warmupDuration
+                um.proxyWarmupMu.Unlock()
+                
+                log.Printf("🔥 Proxy #%d: Warmed up in %v (cold start complete)", proxyIndex+1, warmupDuration)
+        }
+        
         // Check if it's time for latency testing
         shouldTest := um.shouldRunLatencyTest()
         
