@@ -134,6 +134,9 @@ type LatencyTestLog struct {
         proxyWarmedUp     map[int]bool // proxy index -> true if already warmed up
         proxyWarmupMu     sync.RWMutex
         proxyWarmupTime   map[int]time.Duration // proxy index -> warm-up duration
+        // NEW: Client pool for connection reuse (keep-alive)
+        proxyClients      map[int]*http.Client // proxy index -> reusable HTTP client
+        clientPoolMu      sync.RWMutex
 }
 
 func NewUpbitMonitor(onNewListing func(string)) *UpbitMonitor {
@@ -227,6 +230,7 @@ func NewUpbitMonitor(onNewListing func(string)) *UpbitMonitor {
                 lastLatencyTest:  time.Time{}, // Zero time - allows immediate first test
                 proxyWarmedUp:    make(map[int]bool), // NEW: Proxy warm-up tracking
                 proxyWarmupTime:  make(map[int]time.Duration), // NEW: Warm-up duration tracking
+                proxyClients:     make(map[int]*http.Client), // NEW: Client pool for keep-alive
         }
 }
 
@@ -305,10 +309,35 @@ func (um *UpbitMonitor) createProxyClient(proxyURL string) (*http.Client, error)
         return client, nil
 }
 
+// getOrCreateClient returns existing client from pool or creates new one
+// This enables connection reuse and keep-alive for performance
+func (um *UpbitMonitor) getOrCreateClient(proxyIndex int, proxyURL string) (*http.Client, error) {
+        // Try to get existing client from pool
+        um.clientPoolMu.RLock()
+        if client, exists := um.proxyClients[proxyIndex]; exists {
+                um.clientPoolMu.RUnlock()
+                return client, nil
+        }
+        um.clientPoolMu.RUnlock()
+
+        // Client doesn't exist, create new one
+        client, err := um.createProxyClient(proxyURL)
+        if err != nil {
+                return nil, err
+        }
+
+        // Store in pool for reuse
+        um.clientPoolMu.Lock()
+        um.proxyClients[proxyIndex] = client
+        um.clientPoolMu.Unlock()
+
+        return client, nil
+}
+
 // performWarmupRequest performs a silent warm-up request to establish connection
 // This reduces cold-start latency for subsequent requests (connection reuse)
 func (um *UpbitMonitor) performWarmupRequest(proxyURL string, proxyIndex int) {
-        client, err := um.createProxyClient(proxyURL)
+        client, err := um.getOrCreateClient(proxyIndex, proxyURL)
         if err != nil {
                 // Silent failure - warm-up is optimization, not critical
                 return
@@ -653,7 +682,8 @@ func (um *UpbitMonitor) checkProxy(proxyURL string, proxyIndex int) {
         // Check if it's time for latency testing
         shouldTest := um.shouldRunLatencyTest()
         
-        client, err := um.createProxyClient(proxyURL)
+        // Use client pool for connection reuse (keep-alive optimization)
+        client, err := um.getOrCreateClient(proxyIndex, proxyURL)
         if err != nil {
                 log.Printf("❌ Proxy #%d: Client creation failed: %v", proxyIndex+1, err)
                 return
