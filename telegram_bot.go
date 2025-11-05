@@ -766,6 +766,14 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
                 keyPreview = strings.Repeat("*", len(user.BitgetAPIKey)) + "..."
         }
 
+        // TP Status
+        tpDisplay := "Manuel kapatma (TP: 0%)"
+        if user.TakeProfitPercent > 0 {
+                tpMin := user.TakeProfitPercent
+                tpMax := user.TakeProfitPercent + 5
+                tpDisplay = fmt.Sprintf("Otomatik (%%%.0f-%%%.0f arası)", tpMin, tpMax)
+        }
+
         // Plain text settings summary - no markdown issues
         settingsMsg := fmt.Sprintf(`⚙️ TRADING AYARLARINIZ
 
@@ -777,6 +785,7 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
 • Margin Miktarı: %.2f USDT
 • Leverage Oranı: %dx  
 • Risk Seviyesi: %s
+• Take Profit: %s
 
 🔐 API KONFIGÜRASYONU:
 • API Key: %s
@@ -787,6 +796,7 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
 • UPBIT Monitoring: Aktif
 • Otomatik İşlem: %s
 • Pozisyon Yönetimi: Otomatik
+• TP Kontrol: Her 0.5 saniye
 
 💡 HIZLI İŞLEMLER:
 🔧 Setup değiştir: /setup
@@ -798,6 +808,7 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
                 user.MarginUSDT,
                 user.Leverage,
                 riskLevel,
+                tpDisplay,
                 keyPreview,
                 map[bool]string{true: "🟢 Aktif", false: "🔴 Pasif"}[user.IsActive])
 
@@ -980,6 +991,38 @@ func (tb *TelegramBot) handleSetupProcess(chatID int64, userID int64, text strin
                 }
                 
                 user.Leverage = leverage
+                user.State = StateAwaitingTakeProfit
+                tb.saveUser(user)
+                
+                msg := tgbotapi.NewMessage(chatID, `✅ Leverage alındı!
+
+6️⃣ **Take Profit (TP) değerini gönderin**
+
+📊 **Nasıl çalışır?**
+• Girdiğiniz değer % olarak yorumlanır
+• Otomatik aralık oluşturulur (girilen değer + %5)
+
+**Örnekler:**
+• 10 girerseniz → %10-15 arası otomatik kapanır
+• 50 girerseniz → %50-55 arası otomatik kapanır  
+• 100 girerseniz → %100-105 arası otomatik kapanır
+
+💡 **0 girmek:** TP kapalı (manuel kapatma)
+⏱️ **Kontrol:** Her 0.5 saniyede fiyat kontrolü yapılır
+
+**TP değeri girin (örn: 10, 50, 100 veya 0):**`)
+                msg.ParseMode = "Markdown"
+                tb.bot.Send(msg)
+
+        case StateAwaitingTakeProfit:
+                tp, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+                if err != nil || tp < 0 {
+                        msg := tgbotapi.NewMessage(chatID, "❌ Geçersiz TP değeri! 0 veya pozitif bir sayı girin (örn: 10, 50, 100)")
+                        tb.bot.Send(msg)
+                        return
+                }
+                
+                user.TakeProfitPercent = tp
                 user.State = StateComplete
                 user.IsActive = true
                 tb.saveUser(user)
@@ -1026,20 +1069,28 @@ Lütfen API bilgilerinizi kontrol edip /setup ile tekrar deneyin.
                 return
         }
 
+        tpStatus := "Manuel kapatma"
+        if user.TakeProfitPercent > 0 {
+                tpMin := user.TakeProfitPercent
+                tpMax := user.TakeProfitPercent + 5
+                tpStatus = fmt.Sprintf("%%%.0f-%%%.0f arası otomatik", tpMin, tpMax)
+        }
+        
         successMsg := fmt.Sprintf(`✅ **Setup Başarıyla Tamamlandı!**
 
 👤 **Kullanıcı:** @%s
 💰 **Margin:** %.2f USDT
 📈 **Leverage:** %dx
+🎯 **Take Profit:** %s
 🔐 **API:** Bağlantı başarılı
-🎯 **Durum:** Aktif - Auto trading hazır!
+✅ **Durum:** Aktif - Auto trading hazır!
 
 🚀 **Bot artık Upbit'te yeni listelenen coinleri otomatik olarak Bitget'te long position ile alacak.**
 
 **Komutlar:**
 • /settings - Ayarları görüntüle
 • /close - Tüm pozisyonları kapat
-• /setup - Ayarları değiştir`, user.Username, user.MarginUSDT, user.Leverage)
+• /setup - Ayarları değiştir`, user.Username, user.MarginUSDT, user.Leverage, tpStatus)
 
         msg = tgbotapi.NewMessage(chatID, successMsg)
         msg.ParseMode = "Markdown"
