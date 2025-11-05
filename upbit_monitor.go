@@ -1050,8 +1050,8 @@ func (um *UpbitMonitor) GetCurrentLogEntry(ticker string) *TradeExecutionLog {
 func (um *UpbitMonitor) GetServerTime() (*TimeSyncResult, error) {
         localTimeBefore := time.Now()
 
-        // Use any lightweight public endpoint
-        client, err := um.createProxyClient(um.proxies[0])
+        // Use any lightweight public endpoint with connection reuse
+        client, err := um.getOrCreateClient(0, um.proxies[0])
         if err != nil {
                 // Fallback to default client if proxy fails
                 client = &http.Client{Timeout: 10 * time.Second}
