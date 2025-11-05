@@ -1,0 +1,126 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"golang.org/x/net/proxy"
+)
+
+const (
+	proxyURL = "socks5://s11475sMRmHVkWVa-country-SG:S6iBm53deb4YoHk@tr.saglamproxy.com:1080"
+	apiURL   = "https://api-manager.upbit.com/api/v1/announcements?os=web&page=1&per_page=20&category=all"
+	userAgent = "Chrome/141.0.7390.123"
+	
+	// 1 saniye yerine 400 milisaniye
+	requestInterval = 400 * time.Millisecond
+	totalRequests   = 5 // 1 soğuk + 4 sıcak
+)
+
+// createProxyClient, SOCKS5 proxy kullanacak şekilde yapılandırılmış,
+// ve Keep-Alive'ı (varsayılan olarak) etkin olan bir http.Client oluşturur.
+func createProxyClient() (*http.Client, error) {
+	parsedProxyURL, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("proxy URL parse hatası: %w", err)
+	}
+
+	dialer, err := proxy.FromURL(parsedProxyURL, proxy.Direct)
+	if err != nil {
+		return nil, fmt.Errorf("proxy dialer oluşturma hatası: %w", err)
+	}
+
+	transport := &http.Transport{
+		Dial: dialer.Dial,
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   15 * time.Second,
+	}
+
+	return client, nil
+}
+
+// makeRequest, API isteğini yapar ve istenirse JSON'ı ekrana basar
+// Artık body'yi string olarak döndürüyor
+func makeRequest(client *http.Client) (string, error) {
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("request oluşturma hatası: %w", err)
+	}
+
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("istemci hatası: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Body'yi oku
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("body okuma hatası: %w", err)
+	}
+
+	// Body'yi string olarak döndür
+	return string(bodyBytes), nil
+}
+
+func main() {
+	log.Println("HTTP Keep-Alive testi başlatılıyor...")
+	log.Println("SOCKS5 proxy için 'sıcak' (reusable) client oluşturuluyor...")
+
+	client, err := createProxyClient()
+	if err != nil {
+		log.Fatalf("Client oluşturulamadı: %v", err)
+	}
+	log.Println("Client oluşturuldu.")
+
+	// --- 1. Adım: Soğuk Başlangıç (Warm-up) ---
+	log.Println(strings.Repeat("-", 40))
+	log.Println("İstek 1 (Soğuk Başlangıç) yapılıyor... (Bu istek loglanmayacak)")
+	
+	startTimeCold := time.Now()
+	_, err = makeRequest(client) // İstek yap, ama sonucu (JSON) kullanma
+	if err != nil {
+		log.Fatalf("Soğuk başlangıç isteği başarısız: %v", err)
+	}
+	log.Printf("Soğuk başlangıç %v sürdü. Sıcak isteklere geçiliyor...", time.Since(startTimeCold))
+	log.Println(strings.Repeat("-", 40))
+
+
+	// --- 2. Adım: Sıcak İstekler (400ms aralıkla) ---
+	for i := 2; i <= totalRequests; i++ {
+		// Döngünün başında bekle (ilk istekten sonra 400ms beklemiş ol)
+		time.Sleep(requestInterval)
+		
+		log.Printf("İstek %d/%d gönderiliyor...", i, totalRequests)
+		startTime := time.Now() // Zamanlayıcıyı başlat
+
+		// İsteği yap ve ham JSON'ı al
+		jsonOutput, err := makeRequest(client)
+
+		duration := time.Since(startTime) // Zamanlayıcıyı durdur
+
+		if err != nil {
+			log.Printf("HATA - İstek %d: %v", i, err)
+		} else {
+			// İsteğin süresini logla
+			log.Printf("OK    - İstek %d tamamlandı. Toplam süre: %v", i, duration)
+			
+			// İstenen Ham JSON'ı ekrana bas
+			log.Printf("--- Başlangıç: İstek %d JSON Yanıtı ---\n%s\n--- Bitiş: İstek %d JSON Yanıtı ---", i, jsonOutput, i)
+		}
+	}
+
+	log.Println(strings.Repeat("-", 40))
+	log.Println("Test tamamlandı.")
+}
