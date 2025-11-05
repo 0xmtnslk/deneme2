@@ -1,0 +1,338 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/net/proxy"
+)
+
+// --- Ayarlar ---
+const (
+	apiURL   = "https://api-manager.upbit.com/api/v1/announcements?os=web&page=1&per_page=20&category=all"
+	userAgent = "Chrome/141.0.7390.123"
+
+	proxyListFile    = "proxies.txt"
+	logBaseDir       = "logss"
+	latencyLogFile   = "logss/proxy_latency.json"
+	detailedLogFile  = "logss/data.json"
+
+	staggerInterval     = 400 * time.Millisecond // İşçiler arasındaki gecikme (Genel frekans)
+	detailedLogInterval = 4 * time.Minute
+	totalDuration       = 1 * time.Hour
+	
+	// İstenen zaman formatları
+	kstFormat = "2006-01-02 15:04:05.00"
+	detailedFormat = "2006-01-02T15:04:05.00Z07:00"
+)
+
+// --- Globaller ---
+var (
+	kst             *time.Location
+	proxies         []string
+	latencyLogChan  chan string
+	detailedLogChan chan DetailedLog
+	wg              sync.WaitGroup
+)
+
+// Detaylı JSON logu için struct
+type DetailedLog struct {
+	SunucuIstek string      `json:"sunucuistek"`
+	UpbitYanit  string      `json:"upbityanit"`
+	Response    interface{} `json:"response"`
+}
+
+func init() {
+	var err error
+	kst, err = time.LoadLocation("Asia/Seoul")
+	if err != nil {
+		log.Fatalf("KST saat dilimi yüklenemedi: %v", err)
+	}
+}
+
+// Proxy listesini dosyadan okur
+func loadProxies() {
+	file, err := os.Open(proxyListFile)
+	if err != nil {
+		log.Fatalf("Proxy dosyası okunamadı (%s): %v", proxyListFile, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			proxies = append(proxies, strings.Replace(line, "socks5h://", "socks5://", 1))
+		}
+	}
+	if len(proxies) == 0 {
+		log.Fatalf("Proxy listesi boş veya okunamadı.")
+	}
+	log.Printf("%d adet proxy (işçi) yüklendi.", len(proxies))
+}
+
+// "Keep-Alive" (sıcak) bağlantı sağlayan bir http.Client oluşturur.
+func createProxyClient(proxyString string) (*http.Client, error) {
+	parsedProxyURL, err := url.Parse(proxyString)
+	if err != nil {
+		return nil, fmt.Errorf("proxy URL parse hatası: %w", err)
+	}
+
+	dialer, err := proxy.FromURL(parsedProxyURL, proxy.Direct)
+	if err != nil {
+		return nil, fmt.Errorf("proxy dialer oluşturma hatası: %w", err)
+	}
+
+	transport := &http.Transport{
+		Dial: dialer.Dial,
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
+	return client, nil
+}
+
+// makeRequest, API isteği yapar ve DÜZELTİLMİŞ formatta log kanallarına gönderir
+func makeRequest(client *http.Client, proxyString string, writeDetailedLog bool) {
+	
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		log.Printf("HATA (%s): İstek oluşturulamadı: %v", proxyString, err)
+		return
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
+
+	startTimeKST := time.Now().In(kst)
+	resp, err := client.Do(req)
+	endTimeKST := time.Now().In(kst)
+
+	latency := endTimeKST.Sub(startTimeKST)
+
+	if err != nil {
+		log.Printf("HATA (%s): İstek hatası: %v", proxyString, err)
+		logLine := fmt.Sprintf("%s | %.3fs | %s | HATA: %v",
+			startTimeKST.Format(kstFormat),
+			latency.Seconds(),
+			proxyString,
+			err,
+		)
+		latencyLogChan <- logLine
+		return
+	}
+	defer resp.Body.Close()
+
+	// 1. Latency Logu (Her zaman)
+	logLine := fmt.Sprintf("%s | %.3fs | %s | HTTP %d",
+		startTimeKST.Format(kstFormat),
+		latency.Seconds(),
+		proxyString,
+		resp.StatusCode,
+	)
+	latencyLogChan <- logLine
+
+	// 2. Detaylı Log (İstenmişse)
+	if writeDetailedLog {
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("HATA (%s): Detaylı log için body okunamadı: %v", proxyString, err)
+			return
+		}
+
+		var apiResponse interface{}
+		if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
+			apiResponse = string(bodyBytes)
+		}
+
+		detailedLogChan <- DetailedLog{
+			SunucuIstek: startTimeKST.Format(detailedFormat),
+			UpbitYanit:  endTimeKST.Format(detailedFormat),
+			Response:    apiResponse,
+		}
+	} else {
+		io.Copy(io.Discard, resp.Body)
+	}
+}
+
+// --- Log Yazıcı Goroutine'ları (Engellemesiz yazım için) ---
+
+func latencyLogWriter(ctx context.Context) {
+	defer wg.Done()
+	file, err := os.OpenFile(latencyLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil { log.Fatalf("Latency log dosyası açılamadı: %v", err) }
+	defer file.Close()
+	log.Printf("Latency logları şuraya yazılacak: %s", latencyLogFile)
+
+	for {
+		select {
+		case logLine := <-latencyLogChan:
+			file.WriteString(logLine + "\n")
+		case <-ctx.Done():
+			for len(latencyLogChan) > 0 { file.WriteString(<-latencyLogChan + "\n") }
+			return
+		}
+	}
+}
+
+func detailedLogWriter(ctx context.Context) {
+	defer wg.Done()
+	file, err := os.OpenFile(detailedLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil { log.Fatalf("Detaylı log dosyası açılamadı: %v", err) }
+	defer file.Close()
+	log.Printf("Detaylı loglar şuraya yazılacak: %s (JSON Lines formatında)", detailedLogFile)
+	encoder := json.NewEncoder(file)
+
+	for {
+		select {
+		case logData := <-detailedLogChan:
+			encoder.Encode(logData)
+		case <-ctx.Done():
+			for len(detailedLogChan) > 0 { encoder.Encode(<-detailedLogChan) }
+			return
+		}
+	}
+}
+
+// --- İşçi (Worker) Goroutine'ları ---
+
+func startWorker(ctx context.Context, proxyString string, loopTime time.Duration) {
+	defer wg.Done()
+	log.Printf("[İŞÇİ] %s için başlatılıyor (Döngü süresi: %v)", proxyString, loopTime)
+
+	client, err := createProxyClient(proxyString)
+	if err != nil {
+		log.Printf("HATA (%s): Kalıcı client oluşturulamadı: %v", proxyString, err)
+		return
+	}
+
+	// 1. Isınma (Warm-up)
+	log.Printf("[İŞÇİ] %s ısınıyor (soğuk başlangıç)...", proxyString)
+	makeRequest(client, proxyString, false) 
+
+	// 2. Ana Döngü
+	ticker := time.NewTicker(loopTime)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			makeRequest(client, proxyString, false)
+		case <-ctx.Done():
+			log.Printf("[İŞÇİ] %s durduruluyor.", proxyString)
+			return
+		}
+	}
+}
+
+func startDetailedLogger(ctx context.Context, proxyString string) {
+	defer wg.Done()
+	log.Printf("[DETAY LOG] %s üzerinden her 4 dakikada bir log alınacak.", proxyString)
+
+	client, err := createProxyClient(proxyString)
+	if err != nil {
+		log.Printf("HATA (%s): Detaylı log client'ı oluşturulamadı: %v", proxyString, err)
+		return
+	}
+
+	// Isınma
+	makeRequest(client, proxyString, false)
+
+	ticker := time.NewTicker(detailedLogInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			log.Printf("[DETAY LOG] 4 dakikalık log tetiklendi...")
+			makeRequest(client, proxyString, true)
+		case <-ctx.Done():
+			log.Printf("[DETAY LOG] Durduruluyor.")
+			return
+		}
+	}
+}
+
+
+func main() {
+	// 1. Kurulum
+	if err := os.MkdirAll(logBaseDir, 0755); err != nil {
+		log.Fatalf("Log dizini oluşturulamadı: %v", err)
+	}
+	log.Println("Uygulama başlatılıyor...")
+	log.Printf("KST saati: %s", time.Now().In(kst).Format(time.RFC3339))
+
+	loadProxies() 
+	numProxies := len(proxies)
+	if numProxies == 0 {
+		log.Fatalf("proxies.txt dosyasında hiç proxy bulunamadı.")
+	}
+
+	workerLoopTime := time.Duration(numProxies) * staggerInterval
+	log.Printf("Hesaplama: %d işçi * %v = her işçi %v döngü süresine sahip olacak.", numProxies, staggerInterval, workerLoopTime)
+
+	// 2. Ana Context'i Oluştur
+	ctx, cancel := context.WithTimeout(context.Background(), totalDuration)
+	defer cancel()
+
+	// 3. Log Yazıcıları Başlat
+	latencyLogChan = make(chan string, 1000)
+	detailedLogChan = make(chan DetailedLog, 100)
+	wg.Add(2) 
+	go latencyLogWriter(ctx)
+	go detailedLogWriter(ctx)
+
+	// 4. KST Senkronizasyonu
+	log.Println("En yakın KST dakika başına senkronizasyon bekleniyor...")
+	nowKST := time.Now().In(kst)
+	nextMinute := nowKST.Truncate(time.Minute).Add(time.Minute)
+	if nextMinute.Sub(nowKST) < time.Second {
+		nextMinute = nextMinute.Add(time.Minute)
+	}
+	waitDuration := nextMinute.Sub(nowKST)
+	log.Printf("Hedef KST: %s. Kalan süre: %v", nextMinute.Format("15:04:05.000"), waitDuration)
+	time.Sleep(waitDuration) 
+
+	// 5. Ana Programı Başlat
+	log.Println("BAŞLADI! 1 saat boyunca çalışacak.")
+	log.Printf("Başlangıç KST: %s", time.Now().In(kst).Format("2006-01-02 15:04:05.000"))
+
+	// --- DÜZELTME BAŞLANGICI ---
+	
+	// 6. Detaylı Log İşçisini *HEMEN* Başlat
+	// Bu, 4 dakikalık zamanlayıcının tam dakika başında (örn: 21:32:00) başlamasını sağlar.
+	wg.Add(1)
+	go startDetailedLogger(ctx, proxies[0]) // Detaylı loglar için 1. proxy'yi kullanır
+
+	// 7. İşçileri Gecikmeli (Staggered) Olarak Başlat
+	// Bu, ana döngüyü 7.2 saniye boyunca 'engelleyecek' (diğer işçiler paralel çalışırken)
+	for i := 0; i < numProxies; i++ {
+		wg.Add(1)
+		go startWorker(ctx, proxies[i], workerLoopTime)
+		time.Sleep(staggerInterval) // 400ms bekle, sonra sıradaki işçiyi başlat
+	}
+	
+	// --- DÜZELTME BİTİŞİ ---
+
+	// 8. Kapanışı Bekle
+	<-ctx.Done() // 1 saat dolana kadar burada bekle
+	
+	log.Println("1 saatlik çalışma süresi doldu. Program durduruluyor...")
+	close(latencyLogChan)
+	close(detailedLogChan)
+	
+	log.Println("Tüm işçilerin ve log yazıcıların durması bekleniyor...")
+	wg.Wait()
+	log.Println("Tüm işlemler tamamlandı. Çıkış.")
+}
