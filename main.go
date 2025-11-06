@@ -1,16 +1,47 @@
 package main
 
 import (
+        "fmt"
         "log"
         "time"
 
         "github.com/joho/godotenv"
 )
 
+// waitForNextMinute waits until the start of the next minute (XX:XX:00.000)
+// This ensures all monitoring starts synchronized at 00 seconds
+func waitForNextMinute() {
+        // 1. Get current time
+        now := time.Now()
+
+        // 2. Calculate the start of the next minute
+        //    Truncate(time.Minute) -> gives the start of current minute (e.g., 10:45:23 -> 10:45:00)
+        //    Add(time.Minute)      -> adds 1 minute to get next minute start (e.g., 10:45:00 -> 10:46:00)
+        nextMinute := now.Truncate(time.Minute).Add(time.Minute)
+
+        // 3. Calculate duration until next minute starts
+        //    time.Until(targetTime) -> returns duration from now until targetTime
+        waitDuration := time.Until(nextMinute)
+
+        // Log synchronization info
+        fmt.Printf("⏰ Şu anki zaman: %s\n", now.Format("15:04:05.000"))
+        fmt.Printf("🎯 Hedeflenen başlangıç zamanı: %s\n", nextMinute.Format("15:04:05.000"))
+        fmt.Printf("⏳ %s boyunca bekleniyor...\n", waitDuration)
+
+        // 4. Sleep until next minute starts
+        time.Sleep(waitDuration)
+
+        // Log start time
+        fmt.Printf("🚀 Başlangıç! Zaman: %s\n", time.Now().Format("15:04:05.000"))
+}
+
 func main() {
         log.Println("🚀 Upbit-Bitget Auto Trading System Starting...")
 
         _ = godotenv.Load()
+        
+        // Wait for next minute to start (synchronized timing)
+        waitForNextMinute()
 
         // Start Telegram bot first to get bot instance
         telegramBot := InitializeTelegramBot()
