@@ -1,0 +1,38 @@
+2025/11/06 20:36:01 📡 UPBIT TIME SYNC:
+2025/11/06 20:36:01    • Server Time: 2025-11-06 20:36:01.298
+2025/11/06 20:36:01    • Local Time:  2025-11-06 20:36:01.400
+2025/11/06 20:36:01    • Clock Offset: -101.998993ms
+2025/11/06 20:36:01    • Network Latency: 298.78849ms
+2025/11/06 20:36:01    ✅ Clock sync OK (offset < 1s)
+2025/11/06 20:36:01 📡 BITGET TIME SYNC:
+2025/11/06 20:36:01    • Server Time: 2025-11-06 20:36:01.781
+2025/11/06 20:36:01    • Local Time:  2025-11-06 20:36:01.496
+2025/11/06 20:36:01    • Clock Offset: 284.91512ms
+2025/11/06 20:36:01    • Network Latency: 47.841419ms
+2025/11/06 20:36:01    ✅ Clock sync OK (offset < 1s)
+2025/11/06 20:36:01 📡 Starting Upbit monitor...
+2025/11/06 20:36:01 🤖 Starting Telegram bot...
+2025/11/06 20:36:01 🤖 Telegram Bot starting...
+2025/11/06 20:36:01 🚀 Upbit Monitor Starting with total_count DETECTION...
+2025/11/06 20:36:01 Loaded 4 existing symbols from upbit_new.json (JSONL format)
+2025/11/06 20:36:01 📊 DETECTION SYSTEM CONFIGURATION:
+2025/11/06 20:36:01    • Method: total_count + top_notice_id (hybrid with ETag fallback)
+2025/11/06 20:36:01    • API: https://api-manager.upbit.com/api/v1/announcements?os=web&page=1&per_page=20&category=all
+2025/11/06 20:36:01    • Total Proxies: 18 (rotating pool)
+2025/11/06 20:36:01    • Strategy: 500ms proactive cooldown + 30s rate limit penalty
+2025/11/06 20:36:01    • Interval: 250-350ms random stagger
+2025/11/06 20:36:01 ⚡ PERFORMANCE:
+2025/11/06 20:36:01    • Detection Target: <500ms (JSON parsing ~0.1-0.15ms overhead)
+2025/11/06 20:36:01    • Rate: ~3 req/sec (SAFE under Upbit's limit)
+2025/11/06 20:36:01    • Latency Tests: Every 5 minutes (XX:00/05/10/15/20/25/30/35/40/45/50/55) → test_sync.json
+2025/11/06 20:36:01 🎯 STRATEGY:
+2025/11/06 20:36:01    • Primary: total_count monitoring (reliable, public field)
+2025/11/06 20:36:01    • Secondary: top_notice_id tracking (instant change detection)
+2025/11/06 20:36:01    • Fallback: ETag hybrid detection
+2025/11/06 20:36:01    • Proactive 500ms cooldown per proxy
+2025/11/06 20:36:01    • Auto-skip cooling down proxies
+2025/11/06 20:36:01 🚀 total_count detection system started!
+2025/11/06 20:36:02 🔥 Proxy #14: Warmed up in 593.023591ms (cold start complete)
+2025/11/06 20:36:02 🔥 Proxy #14: CHANGE DETECTED! total_count: 0 → 5072
+2025/11/06 20:36:02 📝 Detection logged: Proxy #14, total_count=5072, top_notice_id=5709
+2025/11/06 20:36:03 🔥 Proxy #18: Warmed up in 482.903819ms (cold start complete)
