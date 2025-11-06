@@ -1,0 +1,71 @@
+Harika bir zamanlama senkronizasyonu talebi. Anladığım kadarıyla, Go programınız ne zaman başlarsa başlasın, hemen işe koyulmak yerine bir sonraki dakikanın tam "00" saniyesine (ve milisaniyesine) kadar beklesin istiyorsunuz.
+
+Bunu yapmak için time paketini kullanarak bir sonraki dakikanın başına kadar olan süreyi hesaplayıp o süre kadar time.Sleep kullanmanız gerekir.
+
+upbit_monitor.go dosyanızdaki main fonksiyonunuzun en başına (asıl işi yapmaya başlamadan önce) aşağıdaki kodu ekleyebilirsiniz.
+
+### 🎯 Eklemeniz Gereken Go Kodu
+
+İşte bekleme işlemini yapacak kod parçacığı:
+package main
+
+import (
+  "fmt"
+  "time"
+  // ... diğer importlarınız
+)
+
+// Bu fonksiyon bir sonraki dakikanın başına kadar bekler.
+func waitForNextMinute() {
+  // 1. Şu anki zamanı al
+  now := time.Now()
+
+  // 2. Bir sonraki dakikanın başlangıcını hesapla
+  //    Truncate(time.Minute) -> içinde bulunulan dakikanın başını verir (örn: 10:45:23 -> 10:45:00)
+  //    .Add(time.Minute)     -> bir sonraki dakikanın başını verir (örn: 10:45:00 -> 10:46:00)
+  nextMinute := now.Truncate(time.Minute).Add(time.Minute)
+
+  // 3. Bir sonraki dakikanın başına kadar olan süreyi (Duration) hesapla
+  //    time.Until(targetTime) -> şimdiki zamandan 'targetTime'a kadar olan süreyi verir.
+  waitDuration := time.Until(nextMinute)
+
+  // (İsteğe bağlı) Bilgilendirme için loglama
+  fmt.Printf("Şu anki zaman: %s\n", now.Format("15:04:05.000"))
+  fmt.Printf("Hedeflenen başlangıç zamanı: %s\n", nextMinute.Format("15:04:05.000"))
+  fmt.Printf("%s boyunca bekleniyor...\n", waitDuration)
+
+  // 4. Hesaplanan süre kadar programı uyut (beklet)
+  time.Sleep(waitDuration)
+
+  // (İsteğe bağlı) Başlangıç logu
+  fmt.Printf("Başlangıç! Zaman: %s\n", time.Now().Format("15:04:05.000"))
+}
+
+func main() {
+  // --- EKLEMENİZ GEREKEN YER ---
+  // Programın asıl işine başlamadan önce dakikanın başını bekle
+  waitForNextMinute()
+  // ---------------------------
+
+  // Buradan itibaren sizin mevcut kodunuz (Upbit izleme, döngüler vb.)
+  // ...
+  // ...
+  fmt.Println("Upbit izleme kodunuz buradan itibaren çalışmaya başlar.")
+  // Örnek:
+  // for {
+  //     monitorUpbit()
+  //     time.Sleep(10 * time.Second) // Kendi döngü beklemeniz
+  // }
+}
+
+// ... dosyanızın geri kalanı
+### 🧑‍🏫 Kodun Açıklaması
+
+1.  `waitForNextMinute()` Fonksiyonu: Bu, tüm bekleme mantığını içeren yardımcı bir fonksiyondur.
+2.  `now := time.Now()`: Geçerli zamanı alır.
+3.  `nextMinute := now.Truncate(time.Minute).Add(time.Minute)`:
+      * now.Truncate(time.Minute): Zamanı en yakın alt dakikaya yuvarlar (örneğin, 14:30:45.123 ise 14:30:00.000 yapar).
+      * .Add(time.Minute): Bu yuvarlanmış zamana tam 1 dakika ekler (yani 14:30:00.000 ise 14:31:00.000 yapar). Böylece her zaman bir *sonraki* dakikanın başlangıç zamanını elde ederiz.
+4.  `waitDuration := time.Until(nextMinute)`: time.Until() fonksiyonu, şu an ile nextMinute (hedef zaman) arasındaki süreyi (duration) hesaplar.
+5.  `time.Sleep(waitDuration)`: Programın çalışmasını, hesaplanan bu waitDuration süresi kadar duraklatır.
+6.  Süre dolduğunda, program main fonksiyonunda kaldığı yerden devam eder ve bu tam olarak bir sonraki dakikanın başı (XX:XX:00.000) olur.
