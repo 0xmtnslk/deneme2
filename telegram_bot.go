@@ -25,31 +25,29 @@ import (
 type UserState string
 
 const (
-        StateNone               UserState = "none"
-        StateConfirmAPIChange   UserState = "confirm_api_change"
-        StateAwaitingKey        UserState = "awaiting_api_key"
-        StateAwaitingSecret     UserState = "awaiting_secret"
-        StateAwaitingPasskey    UserState = "awaiting_passkey"  
-        StateAwaitingMargin     UserState = "awaiting_margin"
-        StateAwaitingLeverage   UserState = "awaiting_leverage"
-        StateAwaitingTakeProfit UserState = "awaiting_take_profit"
-        StateComplete           UserState = "complete"
+        StateNone             UserState = "none"
+        StateConfirmAPIChange UserState = "confirm_api_change"
+        StateAwaitingKey      UserState = "awaiting_api_key"
+        StateAwaitingSecret   UserState = "awaiting_secret"
+        StateAwaitingPasskey  UserState = "awaiting_passkey"  
+        StateAwaitingMargin   UserState = "awaiting_margin"
+        StateAwaitingLeverage UserState = "awaiting_leverage"
+        StateComplete         UserState = "complete"
 )
 
 // UserData represents individual user settings and API credentials
 type UserData struct {
-        UserID            int64     `json:"user_id"`
-        Username          string    `json:"username"`
-        BitgetAPIKey      string    `json:"bitget_api_key"`      // Encrypted when stored
-        BitgetSecret      string    `json:"bitget_secret"`       // Encrypted when stored
-        BitgetPasskey     string    `json:"bitget_passkey"`      // Encrypted when stored
-        MarginUSDT        float64   `json:"margin_usdt"`
-        Leverage          int       `json:"leverage"`
-        TakeProfitPercent float64   `json:"take_profit_percent"` // TP percentage (10 = %10-15 range)
-        IsActive          bool      `json:"is_active"`
-        State             UserState `json:"current_state"`
-        CreatedAt         string    `json:"created_at"`
-        UpdatedAt         string    `json:"updated_at"`
+        UserID        int64     `json:"user_id"`
+        Username      string    `json:"username"`
+        BitgetAPIKey  string    `json:"bitget_api_key"`      // Encrypted when stored
+        BitgetSecret  string    `json:"bitget_secret"`       // Encrypted when stored
+        BitgetPasskey string    `json:"bitget_passkey"`      // Encrypted when stored
+        MarginUSDT    float64   `json:"margin_usdt"`
+        Leverage      int       `json:"leverage"`
+        IsActive      bool      `json:"is_active"`
+        State         UserState `json:"current_state"`
+        CreatedAt     string    `json:"created_at"`
+        UpdatedAt     string    `json:"updated_at"`
 }
 
 // PositionInfo stores position tracking data for reminders
@@ -205,9 +203,6 @@ func NewTelegramBot(token string) (*TelegramBot, error) {
 
         // Start 4-hour status notifications
         go botInstance.startStatusNotifications()
-        
-        // Start Take Profit monitor (0.5s interval)
-        go botInstance.startTakeProfitMonitor()
 
         return botInstance, nil
 }
@@ -769,14 +764,6 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
                 keyPreview = strings.Repeat("*", len(user.BitgetAPIKey)) + "..."
         }
 
-        // TP Status
-        tpDisplay := "Manuel kapatma (TP: 0%)"
-        if user.TakeProfitPercent > 0 {
-                tpMin := user.TakeProfitPercent
-                tpMax := user.TakeProfitPercent + 5
-                tpDisplay = fmt.Sprintf("Otomatik (%%%.0f-%%%.0f arası)", tpMin, tpMax)
-        }
-
         // Plain text settings summary - no markdown issues
         settingsMsg := fmt.Sprintf(`⚙️ TRADING AYARLARINIZ
 
@@ -788,7 +775,6 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
 • Margin Miktarı: %.2f USDT
 • Leverage Oranı: %dx  
 • Risk Seviyesi: %s
-• Take Profit: %s
 
 🔐 API KONFIGÜRASYONU:
 • API Key: %s
@@ -799,7 +785,6 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
 • UPBIT Monitoring: Aktif
 • Otomatik İşlem: %s
 • Pozisyon Yönetimi: Otomatik
-• TP Kontrol: Her 0.5 saniye
 
 💡 HIZLI İŞLEMLER:
 🔧 Setup değiştir: /setup
@@ -811,7 +796,6 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
                 user.MarginUSDT,
                 user.Leverage,
                 riskLevel,
-                tpDisplay,
                 keyPreview,
                 map[bool]string{true: "🟢 Aktif", false: "🔴 Pasif"}[user.IsActive])
 
@@ -994,38 +978,6 @@ func (tb *TelegramBot) handleSetupProcess(chatID int64, userID int64, text strin
                 }
                 
                 user.Leverage = leverage
-                user.State = StateAwaitingTakeProfit
-                tb.saveUser(user)
-                
-                msg := tgbotapi.NewMessage(chatID, `✅ Leverage alındı!
-
-6️⃣ **Take Profit (TP) değerini gönderin**
-
-📊 **Nasıl çalışır?**
-• Girdiğiniz değer % olarak yorumlanır
-• Otomatik aralık oluşturulur (girilen değer + %5)
-
-**Örnekler:**
-• 10 girerseniz → %10-15 arası otomatik kapanır
-• 50 girerseniz → %50-55 arası otomatik kapanır  
-• 100 girerseniz → %100-105 arası otomatik kapanır
-
-💡 **0 girmek:** TP kapalı (manuel kapatma)
-⏱️ **Kontrol:** Her 0.5 saniyede fiyat kontrolü yapılır
-
-**TP değeri girin (örn: 10, 50, 100 veya 0):**`)
-                msg.ParseMode = "Markdown"
-                tb.bot.Send(msg)
-
-        case StateAwaitingTakeProfit:
-                tp, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
-                if err != nil || tp < 0 {
-                        msg := tgbotapi.NewMessage(chatID, "❌ Geçersiz TP değeri! 0 veya pozitif bir sayı girin (örn: 10, 50, 100)")
-                        tb.bot.Send(msg)
-                        return
-                }
-                
-                user.TakeProfitPercent = tp
                 user.State = StateComplete
                 user.IsActive = true
                 tb.saveUser(user)
@@ -1072,28 +1024,20 @@ Lütfen API bilgilerinizi kontrol edip /setup ile tekrar deneyin.
                 return
         }
 
-        tpStatus := "Manuel kapatma"
-        if user.TakeProfitPercent > 0 {
-                tpMin := user.TakeProfitPercent
-                tpMax := user.TakeProfitPercent + 5
-                tpStatus = fmt.Sprintf("%%%.0f-%%%.0f arası otomatik", tpMin, tpMax)
-        }
-        
         successMsg := fmt.Sprintf(`✅ **Setup Başarıyla Tamamlandı!**
 
 👤 **Kullanıcı:** @%s
 💰 **Margin:** %.2f USDT
 📈 **Leverage:** %dx
-🎯 **Take Profit:** %s
 🔐 **API:** Bağlantı başarılı
-✅ **Durum:** Aktif - Auto trading hazır!
+🎯 **Durum:** Aktif - Auto trading hazır!
 
 🚀 **Bot artık Upbit'te yeni listelenen coinleri otomatik olarak Bitget'te long position ile alacak.**
 
 **Komutlar:**
 • /settings - Ayarları görüntüle
 • /close - Tüm pozisyonları kapat
-• /setup - Ayarları değiştir`, user.Username, user.MarginUSDT, user.Leverage, tpStatus)
+• /setup - Ayarları değiştir`, user.Username, user.MarginUSDT, user.Leverage)
 
         msg = tgbotapi.NewMessage(chatID, successMsg)
         msg.ParseMode = "Markdown"
@@ -1867,123 +1811,6 @@ func (tb *TelegramBot) startStatusNotifications() {
                         messageIndex = (messageIndex + 1) % len(messages)
                         
                         log.Printf("📢 Status notification sent to %d active users", activeUsers)
-                }
-        }
-}
-
-// startTakeProfitMonitor monitors all positions and auto-closes when TP range is hit
-func (tb *TelegramBot) startTakeProfitMonitor() {
-        log.Printf("📊 Starting Take Profit Monitor (check interval: 0.5s)...")
-        
-        ticker := time.NewTicker(500 * time.Millisecond)
-        defer ticker.Stop()
-        
-        for range ticker.C {
-                positionsMutex.RLock()
-                positionsCount := len(activePositions)
-                
-                if positionsCount == 0 {
-                        positionsMutex.RUnlock()
-                        continue
-                }
-                
-                // Create snapshot of positions to check
-                positionsToCheck := make([]*PositionInfo, 0, positionsCount)
-                for _, pos := range activePositions {
-                        positionsToCheck = append(positionsToCheck, pos)
-                }
-                positionsMutex.RUnlock()
-                
-                // Check each position
-                for _, position := range positionsToCheck {
-                        // Get user's TP settings
-                        user, exists := tb.getUser(position.UserID)
-                        if !exists || user.TakeProfitPercent <= 0 {
-                                continue // Skip if user doesn't exist or TP is disabled
-                        }
-                        
-                        // Create API instance for this user
-                        api := NewBitgetAPI(user.BitgetAPIKey, user.BitgetSecret, user.BitgetPasskey)
-                        
-                        // Get current price
-                        currentPrice, err := api.GetSymbolPrice(position.Symbol)
-                        if err != nil {
-                                log.Printf("⚠️ TP Monitor: Failed to get price for %s: %v", position.Symbol, err)
-                                continue
-                        }
-                        
-                        // Calculate profit percentage
-                        profitPercent := ((currentPrice - position.OpenPrice) / position.OpenPrice) * 100
-                        
-                        // Calculate TP range
-                        tpMin := user.TakeProfitPercent
-                        tpMax := user.TakeProfitPercent + 5
-                        
-                        // Check if profit is within TP range
-                        if profitPercent >= tpMin && profitPercent <= tpMax {
-                                log.Printf("🎯 TP HIT! %s: %.2f%% profit (target: %.0f%%-%.0f%%)", 
-                                        position.Symbol, profitPercent, tpMin, tpMax)
-                                
-                                // Close position
-                                _, err := api.FlashClosePosition(position.Symbol, "long")
-                                if err != nil {
-                                        log.Printf("❌ TP Auto-close failed for %s: %v", position.Symbol, err)
-                                        
-                                        // Notify user about failure
-                                        failMsg := fmt.Sprintf(`⚠️ TP Otomatik Kapatma Hatası
-
-📊 %s pozisyonu TP aralığına ulaştı (%%%.2f) ancak kapatma başarısız oldu.
-
-Hata: %s
-
-Lütfen manuel olarak kapatın: /close`, position.Symbol, profitPercent, err.Error())
-                                        
-                                        msg := tgbotapi.NewMessage(position.UserID, failMsg)
-                                        tb.bot.Send(msg)
-                                        continue
-                                }
-                                
-                                // Calculate final P&L
-                                priceChange := currentPrice - position.OpenPrice
-                                usdPnL := priceChange * position.Size
-                                usdPnLWithLeverage := usdPnL * float64(position.Leverage)
-                                
-                                // Remove from active positions
-                                positionKey := fmt.Sprintf("%d_%s", position.UserID, position.Symbol)
-                                positionsMutex.Lock()
-                                delete(activePositions, positionKey)
-                                positionsMutex.Unlock()
-                                go saveActivePositions()
-                                
-                                // Notify user
-                                successMsg := fmt.Sprintf(`✅ Take Profit Otomatik Kapandı!
-
-💹 Sembol: %s
-📊 Açılış: $%.4f
-💰 Kapanış: $%.4f
-📈 Kar: %%%.2f (Hedef: %%%.0f-%%%.0f)
-
-🟢 P&L: +%.2f USDT
-⚖️ Kaldıraç: %dx
-💵 Pozisyon: %.8f
-
-🎯 Pozisyon otomatik olarak kar al hedefinde kapatıldı!`, 
-                                        position.Symbol,
-                                        position.OpenPrice,
-                                        currentPrice,
-                                        profitPercent,
-                                        tpMin,
-                                        tpMax,
-                                        usdPnLWithLeverage,
-                                        position.Leverage,
-                                        position.Size)
-                                
-                                msg := tgbotapi.NewMessage(position.UserID, successMsg)
-                                tb.bot.Send(msg)
-                                
-                                log.Printf("✅ TP Auto-closed %s at %.2f%% profit for user %d", 
-                                        position.Symbol, profitPercent, position.UserID)
-                        }
                 }
         }
 }

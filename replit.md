@@ -16,11 +16,8 @@ This system is designed to detect new cryptocurrency listings on Upbit in real-t
 ### Trading Execution Engine
 The bot executes trades automatically upon listing detection, leveraging parallel API calls to Bitget. It supports multi-user parallel goroutines, allowing all users to trade simultaneously. Configuration includes per-user margin and leverage settings, with order placement on Bitget futures/spot markets. This parallel execution reduces the time from detection to order placement to 0.5-0.8 seconds.
 
-#### Take Profit (TP) Auto-Close System
-A background monitoring system runs every 0.5 seconds to check active positions against user-defined take profit targets. Users configure a TP percentage during setup (e.g., 10, 50, 100), which creates an automatic range (input + 5%, so 10 = 10%-15% range). When a position's profit reaches this range, it is automatically closed via FlashClosePosition API and the user receives a notification with final P&L details. TP monitoring is independent per user and can be disabled by setting TP to 0.
-
 ### User Management System
-A JSON-based system (`bot_users.json`) manages multiple users, storing individual Bitget API credentials (encrypted/encoded), trading parameters (margin, leverage, take profit percentage), and activation status. Telegram user IDs serve as primary identifiers, and a state machine tracks user configuration progress through states: API Key → Secret → Passphrase → Margin → Leverage → Take Profit → Complete.
+A JSON-based system (`bot_users.json`) manages multiple users, storing individual Bitget API credentials (encrypted/encoded), trading parameters (margin, leverage), and activation status. Telegram user IDs serve as primary identifiers, and a state machine tracks user configuration progress.
 
 ### Telegram Bot Interface
 A Telegram bot facilitates user interaction for registration, API key configuration, trading parameter setup, and bot activation/deactivation. This provides a mobile-friendly and notification-rich interface for users.
